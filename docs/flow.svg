@@ -1,0 +1,126 @@
+<svg viewBox="0 0 1020 520" width="1020" height="520" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#64748b" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#16a34a" />
+    </marker>
+  </defs>
+
+  <!-- Outer Boundary Canvas Frame -->
+  <rect x="5" y="5" width="1010" height="510" rx="16" ry="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+
+  <!-- ============================================================== -->
+  <!-- BOX 1: TOP-LEFT - Client Application (Yellow)                 -->
+  <!-- ============================================================== -->
+  <rect x="35" y="35" width="270" height="100" rx="10" ry="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" />
+  <text x="50" y="65" font-size="14" font-weight="700" fill="#92400e">Client Application / SDK</text>
+  <text x="50" y="85" font-size="11" fill="#78350f">AI Consumer Service (Python / Node / Go)</text>
+  <text x="50" y="102" font-size="10" font-weight="600" fill="#b45309">• 1. Obtains Entra Token &#8594; 2. Exchanges for Mode A</text>
+  <text x="50" y="118" font-size="10" font-weight="600" fill="#7c3aed">• 3. Calls Portkey Directly (Caches JWT 50m)</text>
+
+  <!-- ============================================================== -->
+  <!-- BOX 2: TOP-RIGHT - Microsoft Entra ID (Yellow)                 -->
+  <!-- ============================================================== -->
+  <rect x="475" y="35" width="270" height="100" rx="10" ry="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" />
+  <text x="490" y="65" font-size="14" font-weight="700" fill="#92400e">Microsoft Entra ID</text>
+  <text x="490" y="85" font-size="11" fill="#78350f">Enterprise Authorization Server (IdP)</text>
+  <text x="490" y="103" font-size="10" font-weight="600" fill="#b45309">Issues Access Tokens with App Roles</text>
+  <text x="490" y="118" font-size="10" fill="#64748b">No Graph directory queries required</text>
+
+  <!-- ============================================================== -->
+  <!-- BOX 3: BOTTOM-LEFT - Azure Function App (Blue)                 -->
+  <!-- ============================================================== -->
+  <rect x="35" y="285" width="270" height="185" rx="10" ry="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" />
+  <text x="50" y="315" font-size="14" font-weight="700" fill="#1e40af">Token Broker (Azure Container App)</text>
+  <text x="50" y="333" font-size="11" font-weight="600" fill="#2563eb">Out-of-Band Auth / Control Plane Only</text>
+  <text x="50" y="350" font-size="10" fill="#475569">• In-Memory Role-to-Config Policy</text>
+  <text x="50" y="365" font-size="10" fill="#475569">• Exposes GET /.well-known/jwks.json</text>
+
+  <!-- Inner Compartment: Azure Key Vault -->
+  <rect x="50" y="375" width="240" height="80" rx="8" ry="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" />
+  <text x="62" y="398" font-size="12" font-weight="700" fill="#0f172a">Azure Key Vault (RSA-2048 key)</text>
+  <text x="62" y="415" font-size="10" font-family="monospace" font-weight="600" fill="#2563eb">portkey-signing-key</text>
+  <text x="62" y="430" font-size="10" fill="#64748b">Asymmetric RS256 Private Signing</text>
+  <text x="62" y="445" font-size="9" fill="#059669">System-Assigned Managed Identity</text>
+
+  <!-- ============================================================== -->
+  <!-- BOX 4: BOTTOM-MIDDLE - Portkey AI Gateway (Purple Boundary)   -->
+  <!-- ============================================================== -->
+  <rect x="475" y="285" width="270" height="185" rx="10" ry="10" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" />
+  <text x="490" y="315" font-size="14" font-weight="700" fill="#6b21a8">Portkey AI Gateway</text>
+  <text x="490" y="335" font-size="11" fill="#7c3aed">Enterprise Multi-Tenant Routing Engine</text>
+  <text x="490" y="360" font-size="10" fill="#334155">• Validates Mode A Token via Cached JWKS</text>
+  <text x="490" y="380" font-size="10" fill="#334155">• Applies defaults.config_slug</text>
+  <text x="490" y="400" font-size="10" fill="#334155">• Dynamic Routing to portkey_workspace</text>
+  <text x="490" y="420" font-size="10" fill="#334155">• usage_limits (per doc; untested)</text>
+  <text x="490" y="440" font-size="10" font-weight="600" fill="#6b21a8">• 0ms Broker Latency on Inference</text>
+
+  <!-- ============================================================== -->
+  <!-- BOX 5: BOTTOM-RIGHT - Upstream LLMs (Green)                   -->
+  <!-- ============================================================== -->
+  <rect x="805" y="325" width="180" height="105" rx="10" ry="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" />
+  <text x="820" y="355" font-size="14" font-weight="700" fill="#15803d">Upstream LLMs</text>
+  <text x="820" y="375" font-size="11" fill="#166534">Azure OpenAI, Anthropic,</text>
+  <text x="820" y="392" font-size="11" fill="#166534">AWS Bedrock, OpenAI</text>
+  <text x="820" y="412" font-size="9" font-weight="600" fill="#15803d">Guarded &amp; DLP Filtered</text>
+
+  <!-- ============================================================== -->
+  <!-- CONTROL PLANE FLOWS (1, 2, 3, 4, 5)                            -->
+  <!-- ============================================================== -->
+
+  <!-- Step 1: Client -> Entra ID (top, rightward) -->
+  <line x1="305" y1="65" x2="467" y2="65" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)" />
+  <circle cx="330" cy="48" r="10" fill="#2563eb" />
+  <text x="326.5" y="52" font-size="11" font-weight="700" fill="#ffffff">1</text>
+  <text x="348" y="51" font-size="10" font-weight="600" fill="#475569">POST /oauth2/v2.0/token</text>
+
+  <!-- Step 2: Entra ID -> Client (top return, leftward) -->
+  <line x1="475" y1="98" x2="313" y2="98" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)" />
+  <circle cx="330" cy="116" r="10" fill="#2563eb" />
+  <text x="326.5" y="120" font-size="11" font-weight="700" fill="#ffffff">2</text>
+  <text x="348" y="118" font-size="10" font-weight="600" fill="#475569">Entra Token (roles claim)</text>
+
+  <!-- Step 3: Client -> broker (Vertical Down Left) -->
+  <line x1="90" y1="135" x2="90" y2="277" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow)" />
+  <circle cx="112" cy="205" r="10" fill="#2563eb" />
+  <text x="108.5" y="209" font-size="11" font-weight="700" fill="#ffffff">3</text>
+  <text x="130" y="202" font-size="10" font-weight="600" fill="#1e40af">POST /token/exchange</text>
+  <text x="130" y="216" font-size="9" fill="#64748b">(Bearer Entra Token)</text>
+
+  <!-- Step 4: broker -> Client (Vertical Return Up Right) -->
+  <line x1="245" y1="285" x2="245" y2="143" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow)" />
+  <circle cx="267" cy="205" r="10" fill="#2563eb" />
+  <text x="263.5" y="209" font-size="11" font-weight="700" fill="#ffffff">4</text>
+  <text x="285" y="202" font-size="10" font-weight="600" fill="#1e40af">Return Mode A JWT</text>
+  <text x="285" y="216" font-size="9" fill="#64748b">(Signed via Key Vault • 1h)</text>
+
+  <!-- Step 5: Portkey -> broker (Out-of-Band JWKS Discovery) -->
+  <line x1="475" y1="365" x2="313" y2="365" stroke="#64748b" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#arrow)" />
+  <circle cx="395" cy="350" r="10" fill="#64748b" />
+  <text x="391.5" y="354" font-size="11" font-weight="700" fill="#ffffff">5</text>
+  <text x="330" y="385" font-size="10" font-weight="600" fill="#475569">GET /.well-known/jwks.json</text>
+  <text x="345" y="399" font-size="9" fill="#64748b">(Public JWKS Discovery)</text>
+
+  <!-- ============================================================== -->
+  <!-- DATA PLANE FLOW (DIRECT CLIENT -> PORTKEY GATEWAY)             -->
+  <!-- ============================================================== -->
+
+  <!-- Step 6: DIRECT DATA PLANE - Client -> Portkey Gateway -->
+  <path d="M 305 118 L 380 118 L 380 295 L 467 295" fill="none" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#arrow-purple)" />
+  <circle cx="380" cy="180" r="11" fill="#7c3aed" />
+  <text x="376.5" y="184" font-size="11" font-weight="700" fill="#ffffff">6</text>
+  <rect x="398" y="162" width="210" height="36" rx="6" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.2" />
+  <text x="406" y="177" font-size="10" font-weight="700" fill="#6b21a8">DIRECT DATA PLANE INFERENCE</text>
+  <text x="406" y="191" font-size="9" fill="#475569">POST /v1/chat/completions (Bearer Mode A)</text>
+
+  <!-- Step 7: Portkey Gateway -> Upstream LLMs (Horizontal to Green) -->
+  <line x1="745" y1="375" x2="797" y2="375" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)" />
+  <circle cx="773" cy="360" r="10" fill="#16a34a" />
+  <text x="769.5" y="364" font-size="11" font-weight="700" fill="#ffffff">7</text>
+  <text x="752" y="398" font-size="10" font-weight="700" fill="#15803d">Guarded Call</text>
+</svg>

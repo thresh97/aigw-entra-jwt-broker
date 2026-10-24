@@ -17,7 +17,7 @@ caller --Entra token--> broker --(Key Vault sign)--> Portkey Mode A JWT --Bearer
                           ^ validates against Entra's JWKS           gateway validates against the broker's JWKS
 ```
 
-Design background, with the original handoff's claims corrected after the tests: [docs/design.html](docs/design.html) (open in a browser; it loads Tailwind and fonts from public CDNs).
+Design background, with the original handoff's claims corrected after the tests: [docs/design.md](docs/design.md), with the flow diagram in [docs/flow.svg](docs/flow.svg).
 
 The broker is stateless apart from the key. The policy (role to workspace, `config_slug`, scopes, metadata, optional `usage_limits`) is a Terraform variable that ends up in one environment variable. Roles are checked in the policy's key order, so a caller holding several roles gets the first matching one.
 
