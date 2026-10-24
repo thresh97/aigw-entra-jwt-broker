@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Design: Entra ID to Portkey Mode A Token Broker (updated after lab tests)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-500 selection:text-white">
+
+  <!-- Navigation / Header Bar -->
+  <header class="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 text-white font-bold text-sm shadow-sm">
+          AZ
+        </span>
+        <div>
+          <h1 class="text-sm font-bold text-slate-900 leading-tight">Architecture Handoff Document</h1>
+          <p class="text-xs text-slate-500">Microsoft Entra ID &rarr; Portkey AI Gateway (Mode A JWT)</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs font-semibold text-slate-600">
+        <a href="https://portkey.ai/docs/product/enterprise-offering/org-management/jwt" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5 hover:bg-emerald-100 hover:border-emerald-300 transition-all">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Target Spec: Portkey Mode A &rarr;
+        </a>
+        <a href="https://datatracker.ietf.org/doc/html/rfc8693" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 hover:border-blue-300 transition-all">
+          RFC 8693 Token Facade &rarr;
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 py-10 space-y-12">
+
+    <!-- Document Header Hero -->
+    <section class="space-y-4 border-b border-slate-200 pb-8">
+      <div class="inline-block px-3 py-1 rounded-md bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold tracking-wide uppercase">
+        Enterprise Identity &amp; AI Governance Integration Spec
+      </div>
+      <h1 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
+        Microsoft Entra ID to Portkey Mode A Integration
+      </h1>
+      <p class="text-base sm:text-lg text-slate-600 max-w-4xl leading-relaxed">
+        Comprehensive technical architecture, failure analysis of native Entra ID claims limitations, and the target production blueprint for an Azure-native stateless token broker utilizing asymmetric RS256 Key Vault HSM signing.
+      </p>
+    </section>
+
+    <!-- STATUS: what changed after the build -->
+    <section class="space-y-3 p-5 bg-amber-50 border border-amber-300 rounded-xl text-xs text-amber-900 leading-relaxed">
+      <h2 class="text-sm font-bold">Status 2026-10-23: built and tested; this page was corrected to match</h2>
+      <p>The design below was implemented as a Container App with a Key Vault signing key and Terraform (see the article README), and tested against a hybrid gateway 2.29.0. The original handoff was a design with untested code. Corrections made here:</p>
+      <ul class="list-disc pl-5 space-y-1">
+        <li>The hybrid gateway reads <code>defaults.config_slug</code> and ignores <code>defaults.config_id</code>. Put the slug in the policy.</li>
+        <li>"Tamper-proof config" is not established. The Portkey doc says a config sent in a request header can override the token's default unless config override is disabled; that was not tested.</li>
+        <li>"Mode B forces one gateway per workspace" is only partly right per the doc (workspace can come from an allowlist, an org default or a <code>sub</code> mapping). Mode B with Entra's own JWKS was not tested.</li>
+        <li>Scope names must be gateway scopes (<code>logs.read</code>, not <code>logs.view</code>). <code>usage_limits</code> is an array in the doc; the object shape in the original sketch is wrong, and enforcement was not tested.</li>
+        <li>A user token for a workspace the user isn't a member of gets 403 (code 033) unless the gateway runs with <code>JWT_JIT_USER_ACCESS=ON</code>, which admits it as a service key and trades per-user attribution for availability.</li>
+        <li>The original sketch passed raw bytes to Key Vault's RS256 sign (it expects a digest), used the key <em>name</em> as <code>kid</code> (it must change with the key version), returned error messages to the caller and gave unmatched callers a default tier. The broker hashes first, uses the key version as <code>kid</code>, returns error codes only and refuses callers with no matching role.</li>
+        <li>Not tested: SaaS, key rotation, JWKS cache lifetimes, <code>usage_limits</code>, per-user attribution under JIT, config override by header, dead ends 1 and 2 (taken from the original handoff and Microsoft's documentation).</li>
+      </ul>
+    </section>
+
+    <!-- SECTION 1: Objective & Context -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">1</span>
+        <h2 class="text-xl font-bold text-slate-900">Executive Objective &amp; Context</h2>
+      </div>
+      <p class="text-slate-600 text-sm leading-relaxed">
+        The goal of this initiative is to integrate <strong>Microsoft Entra ID</strong> as the central enterprise Identity Provider (IdP) for the <strong>Portkey AI Gateway</strong> using <a href="https://portkey.ai/docs/product/enterprise-offering/org-management/jwt" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">Portkey Mode A JWT Authentication</a>. In Portkey’s architecture, Mode A allows the token issuer to embed rich, gateway-aware claims directly into signed JWTs. These claims dictate tenant routing, access scopes, and cryptographic guardrails before an inference request ever hits an upstream large language model.
+      </p>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm text-xs">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+          <span class="text-slate-400 font-mono text-[11px] flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Portkey Mode A JWT payload (hybrid reads config_slug; usage_limits shape from the doc, untested)
+          </span>
+          <span class="text-slate-500 font-mono text-[10px]">JSON Payload</span>
+        </div>
+        <pre class="text-emerald-400 overflow-x-auto custom-scrollbar font-mono leading-relaxed"><code>{
+  "portkey_oid": "org_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "portkey_workspace": "production-finance",
+  "email_id": "user@contoso.example",
+  "scope": ["completions.write", "logs.read"],
+  "defaults": {
+    "config_slug": "pc-finance-strict-dlp",
+    "config_id": "pc-finance-strict-dlp",
+    "metadata": {
+      "cost_center": "CC-9021",
+      "department": "RiskAnalytics"
+    }
+  },
+  "usage_limits": [
+    { "id": "ul-1", "type": "cost", "credit_limit": 250, "status": "active" }
+  ]
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Core Drivers -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">2</span>
+        <h2 class="text-xl font-bold text-slate-900">Core Drivers: Why Mode A and <code class="text-base text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">config_id</code> Are Worth It</h2>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        <div class="p-5 bg-white border border-slate-200 rounded-xl shadow-sm space-y-2">
+          <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm">
+            01
+          </div>
+          <h3 class="font-bold text-slate-900 text-sm">Shared Gateway Density &amp; Multi-Tenancy</h3>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            A single Portkey AI Gateway cluster can support hundreds or thousands of distinct corporate workspaces concurrently. In Mode A, the token contains the dynamic <code class="bg-slate-100 text-slate-800 px-1 rounded">portkey_workspace</code> claim. This allows one shared gateway deployment to dynamically route traffic across the entire enterprise based on token claims alone without container replication.
+          </p>
+        </div>
+
+        <div class="p-5 bg-white border border-slate-200 rounded-xl shadow-sm space-y-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm">
+            02
+          </div>
+          <h3 class="font-bold text-slate-900 text-sm">Governance via <code class="text-xs text-indigo-600">defaults.config_slug</code> / <code class="text-xs text-indigo-600">config_id</code></h3>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            In Portkey, a <code class="bg-slate-100 text-slate-800 px-1 rounded">config_id</code> specifies model routing, fallbacks, prompt templates, and security guardrails (PII redaction, jailbreak filters). If passed via HTTP headers (<code class="bg-slate-100 text-slate-800 px-1 rounded">x-portkey-config</code>), clients or compromised apps can tamper with or omit the header. Putting it in a <strong>signed JWT</strong> makes it a default the client can't edit inside the token. Per the Portkey doc a config sent in a request header can still override it unless config override is disabled for the workspace (not tested here), so treat it as a default, not a lock.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Dead Ends -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">3</span>
+        <h2 class="text-xl font-bold text-slate-900">Explored Approaches &amp; Technical Dead Ends</h2>
+      </div>
+      <p class="text-slate-600 text-sm leading-relaxed">
+        Directly integrating Microsoft Entra ID as the native Mode A token issuer proved unviable due to strict schema validation rules inside Entra’s token generation pipeline. Three avenues were considered and rejected. Dead ends 1 and 2 come from the original handoff and Microsoft's documentation and were not reproduced in the lab.
+      </p>
+
+      <div class="space-y-3">
+        <!-- Dead End 1 -->
+        <div class="p-4 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-rose-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-rose-600"></span> Dead End 1: Entra ID Claims Mapping Policy
+            </h3>
+            <span class="text-[10px] uppercase font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded">Rejected</span>
+          </div>
+          <p class="text-xs text-rose-800 leading-relaxed">
+            <strong>Attempt:</strong> Configure an App Registration with <code class="bg-rose-100 px-1 rounded">acceptMappedClaims: true</code> and attach a Graph <code class="bg-rose-100 px-1 rounded">claimsMappingPolicy</code> to emit custom keys (<code class="bg-rose-100 px-1 rounded">portkey_oid</code>, <code class="bg-rose-100 px-1 rounded">defaults</code>).<br>
+            <strong>Why it failed:</strong> Entra ID's <code class="bg-rose-100 px-1 rounded">ClaimsSchema</code> only allows flat, primitive key-value mappings (strings, integers, booleans). It has <strong>no support for emitting nested JSON structures</strong> such as <code class="bg-rose-100 px-1 rounded">defaults: { config_id: "..." }</code>.
+          </p>
+        </div>
+
+        <!-- Dead End 2 -->
+        <div class="p-4 bg-rose-50/50 border border-rose-200 rounded-xl space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-rose-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-rose-600"></span> Dead End 2: Entra ID Custom Claims Provider (<code class="text-xs">onTokenIssuanceStart</code>)
+            </h3>
+            <span class="text-[10px] uppercase font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded">Rejected</span>
+          </div>
+          <p class="text-xs text-rose-800 leading-relaxed">
+            <strong>Attempt:</strong> Use Entra’s custom authentication extension to invoke an Azure Function REST API during token issuance to enrich the token with complex Portkey claims.<br>
+            <strong>Why it failed:</strong> The Microsoft Graph Custom Extension event schema (<code class="bg-rose-100 px-1 rounded">provideClaimsForToken</code>) strictly validates outgoing claim payloads. Claim types are restricted to scalar primitives (<code class="bg-rose-100 px-1 rounded">string</code>, <code class="bg-rose-100 px-1 rounded">boolean</code>, <code class="bg-rose-100 px-1 rounded">integer</code>) or flat collections (<code class="bg-rose-100 px-1 rounded">string[]</code>). Nested JSON dictionaries abort token issuance with schema errors.
+          </p>
+        </div>
+
+        <!-- Dead End 3 -->
+        <div class="p-4 bg-amber-50/50 border border-amber-200 rounded-xl space-y-2">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-amber-900 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-600"></span> Dead End 3: Fallback to Portkey Mode B
+            </h3>
+            <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Claim corrected, untested with Entra JWKS</span>
+          </div>
+          <p class="text-xs text-amber-800 leading-relaxed">
+            <strong>Attempt:</strong> Use Mode B, where Portkey accepts an unmodified Entra ID token and handles workspace mapping via Gateway environment variables (<code class="bg-amber-100 px-1 rounded">ORGANISATIONS_TO_SYNC</code>).<br>
+            <strong>Why it is less attractive:</strong> Per the Portkey doc, Mode B needs one organisation per gateway, but the workspace can come from a workspace allowlist, an org default or a <code class="bg-amber-100 px-1 rounded">sub</code> mapping, so "one gateway per workspace" is only partly right. The IdP's token can't carry <code class="bg-amber-100 px-1 rounded">defaults.config_slug</code>, so the per-team config has to come from elsewhere. Tested: a raw Entra token sent to a gateway whose org JWKS list has no Entra key gets 401 (no matching key). Mode B with Entra's JWKS configured was not tested.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 4: Architecture Diagram -->
+    <section class="space-y-6">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">4</span>
+        <h2 class="text-xl font-bold text-slate-900">Target Architecture: Out-of-Band Token Broker &amp; Direct Data Plane</h2>
+      </div>
+
+      <!-- Architecture Clarification Callout -->
+      <div class="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2 text-xs">
+        <div class="flex items-center gap-2 font-bold text-blue-900">
+          <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          Critical Architecture Distinction: Out-of-Band Control Plane vs. Direct Data Plane
+        </div>
+        <p class="text-blue-800 leading-relaxed">
+          The broker is <strong>never an in-band proxy</strong> for AI traffic. It operates strictly in the <strong>Control/Auth Plane</strong> as an out-of-band token broker. The client application calls the broker once upon boot (and refreshes every 50 minutes) to exchange its Entra token for a Mode A JWT, then caches it. All high-throughput LLM inference calls (<code class="bg-blue-100 px-1 rounded font-mono">/v1/chat/completions</code>) travel <strong>directly from the client to the Portkey AI Gateway</strong>, with no broker in the path.
+        </p>
+      </div>
+
+      <p class="text-slate-600 text-sm leading-relaxed">
+        Following the principles of <a href="https://datatracker.ietf.org/doc/html/rfc8693" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">IETF RFC 8693 (OAuth 2.0 Token Exchange)</a> and <a href="https://portkey.ai/docs/product/enterprise-offering/org-management/jwt" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline font-medium">Portkey Mode A JWT Specification</a>, the diagram below visualizes the decoupled workflow: the Control Plane exchanges and signs the token, Portkey fetches the broker's JWKS out-of-band, and the Data Plane delivers direct client-to-gateway inference.
+      </p>
+
+      <!-- SVG Diagram Container -->
+      <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+        <div class="text-center mb-6">
+          <h3 class="text-base font-bold text-slate-900">Entra ID to Portkey Mode A Integration Flow</h3>
+          <p class="text-xs text-slate-500">Decoupled Out-of-Band Token Broker &amp; Direct Inference Architecture</p>
+        </div>
+
+        <svg viewBox="0 0 1020 520" xmlns="http://www.w3.org/2000/svg" class="w-full h-auto block select-none">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#64748b" />
+            </marker>
+            <marker id="arrow-purple" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#7c3aed" />
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#16a34a" />
+            </marker>
+          </defs>
+
+          <!-- Outer Boundary Canvas Frame -->
+          <rect x="5" y="5" width="1010" height="510" rx="16" ry="16" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5" />
+
+          <!-- ============================================================== -->
+          <!-- BOX 1: TOP-LEFT - Client Application (Yellow)                 -->
+          <!-- ============================================================== -->
+          <rect x="35" y="35" width="270" height="100" rx="10" ry="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" />
+          <text x="50" y="65" font-size="14" font-weight="700" fill="#92400e">Client Application / SDK</text>
+          <text x="50" y="85" font-size="11" fill="#78350f">AI Consumer Service (Python / Node / Go)</text>
+          <text x="50" y="102" font-size="10" font-weight="600" fill="#b45309">• 1. Obtains Entra Token &rarr; 2. Exchanges for Mode A</text>
+          <text x="50" y="118" font-size="10" font-weight="600" fill="#7c3aed">• 3. Calls Portkey Directly (Caches JWT 50m)</text>
+
+          <!-- ============================================================== -->
+          <!-- BOX 2: TOP-RIGHT - Microsoft Entra ID (Yellow)                 -->
+          <!-- ============================================================== -->
+          <rect x="475" y="35" width="270" height="100" rx="10" ry="10" fill="#fffbeb" stroke="#d97706" stroke-width="2" />
+          <text x="490" y="65" font-size="14" font-weight="700" fill="#92400e">Microsoft Entra ID</text>
+          <text x="490" y="85" font-size="11" fill="#78350f">Enterprise Authorization Server (IdP)</text>
+          <text x="490" y="103" font-size="10" font-weight="600" fill="#b45309">Issues Access Tokens with App Roles</text>
+          <text x="490" y="118" font-size="10" fill="#64748b">No Graph directory queries required</text>
+
+          <!-- ============================================================== -->
+          <!-- BOX 3: BOTTOM-LEFT - Azure Function App (Blue)                 -->
+          <!-- ============================================================== -->
+          <rect x="35" y="285" width="270" height="185" rx="10" ry="10" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" />
+          <text x="50" y="315" font-size="14" font-weight="700" fill="#1e40af">Token Broker (Azure Container App)</text>
+          <text x="50" y="333" font-size="11" font-weight="600" fill="#2563eb">Out-of-Band Auth / Control Plane Only</text>
+          <text x="50" y="350" font-size="10" fill="#475569">• In-Memory Role-to-Config Policy</text>
+          <text x="50" y="365" font-size="10" fill="#475569">• Exposes GET /.well-known/jwks.json</text>
+
+          <!-- Inner Compartment: Azure Key Vault -->
+          <rect x="50" y="375" width="240" height="80" rx="8" ry="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5" />
+          <text x="62" y="398" font-size="12" font-weight="700" fill="#0f172a">Azure Key Vault (RSA-2048 key)</text>
+          <text x="62" y="415" font-size="10" font-family="monospace" font-weight="600" fill="#2563eb">portkey-signing-key</text>
+          <text x="62" y="430" font-size="10" fill="#64748b">Asymmetric RS256 Private Signing</text>
+          <text x="62" y="445" font-size="9" fill="#059669">System-Assigned Managed Identity</text>
+
+          <!-- ============================================================== -->
+          <!-- BOX 4: BOTTOM-MIDDLE - Portkey AI Gateway (Purple Boundary)   -->
+          <!-- ============================================================== -->
+          <rect x="475" y="285" width="270" height="185" rx="10" ry="10" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" />
+          <text x="490" y="315" font-size="14" font-weight="700" fill="#6b21a8">Portkey AI Gateway</text>
+          <text x="490" y="335" font-size="11" fill="#7c3aed">Enterprise Multi-Tenant Routing Engine</text>
+          <text x="490" y="360" font-size="10" fill="#334155">• Validates Mode A Token via Cached JWKS</text>
+          <text x="490" y="380" font-size="10" fill="#334155">• Applies defaults.config_slug</text>
+          <text x="490" y="400" font-size="10" fill="#334155">• Dynamic Routing to portkey_workspace</text>
+          <text x="490" y="420" font-size="10" fill="#334155">• usage_limits (per doc; untested)</text>
+          <text x="490" y="440" font-size="10" font-weight="600" fill="#6b21a8">• 0ms Broker Latency on Inference</text>
+
+          <!-- ============================================================== -->
+          <!-- BOX 5: BOTTOM-RIGHT - Upstream LLMs (Green)                   -->
+          <!-- ============================================================== -->
+          <rect x="805" y="325" width="180" height="105" rx="10" ry="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" />
+          <text x="820" y="355" font-size="14" font-weight="700" fill="#15803d">Upstream LLMs</text>
+          <text x="820" y="375" font-size="11" fill="#166534">Azure OpenAI, Anthropic,</text>
+          <text x="820" y="392" font-size="11" fill="#166534">AWS Bedrock, OpenAI</text>
+          <text x="820" y="412" font-size="9" font-weight="600" fill="#15803d">Guarded &amp; DLP Filtered</text>
+
+          <!-- ============================================================== -->
+          <!-- CONTROL PLANE FLOWS (1, 2, 3, 4, 5)                            -->
+          <!-- ============================================================== -->
+
+          <!-- Step 1: Client -> Entra ID (top, rightward) -->
+          <line x1="305" y1="65" x2="467" y2="65" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)" />
+          <circle cx="330" cy="48" r="10" fill="#2563eb" />
+          <text x="326.5" y="52" font-size="11" font-weight="700" fill="#ffffff">1</text>
+          <text x="348" y="51" font-size="10" font-weight="600" fill="#475569">POST /oauth2/v2.0/token</text>
+
+          <!-- Step 2: Entra ID -> Client (top return, leftward) -->
+          <line x1="475" y1="98" x2="313" y2="98" stroke="#64748b" stroke-width="1.8" marker-end="url(#arrow)" />
+          <circle cx="330" cy="116" r="10" fill="#2563eb" />
+          <text x="326.5" y="120" font-size="11" font-weight="700" fill="#ffffff">2</text>
+          <text x="348" y="118" font-size="10" font-weight="600" fill="#475569">Entra Token (roles claim)</text>
+
+          <!-- Step 3: Client -> broker (Vertical Down Left) -->
+          <line x1="90" y1="135" x2="90" y2="277" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow)" />
+          <circle cx="112" cy="205" r="10" fill="#2563eb" />
+          <text x="108.5" y="209" font-size="11" font-weight="700" fill="#ffffff">3</text>
+          <text x="130" y="202" font-size="10" font-weight="600" fill="#1e40af">POST /token/exchange</text>
+          <text x="130" y="216" font-size="9" fill="#64748b">(Bearer Entra Token)</text>
+
+          <!-- Step 4: broker -> Client (Vertical Return Up Right) -->
+          <line x1="245" y1="285" x2="245" y2="143" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow)" />
+          <circle cx="267" cy="205" r="10" fill="#2563eb" />
+          <text x="263.5" y="209" font-size="11" font-weight="700" fill="#ffffff">4</text>
+          <text x="285" y="202" font-size="10" font-weight="600" fill="#1e40af">Return Mode A JWT</text>
+          <text x="285" y="216" font-size="9" fill="#64748b">(Signed via Key Vault • 1h)</text>
+
+          <!-- Step 5: Portkey -> broker (Out-of-Band JWKS Discovery) -->
+          <line x1="475" y1="365" x2="313" y2="365" stroke="#64748b" stroke-width="1.8" stroke-dasharray="5 5" marker-end="url(#arrow)" />
+          <circle cx="395" cy="350" r="10" fill="#64748b" />
+          <text x="391.5" y="354" font-size="11" font-weight="700" fill="#ffffff">5</text>
+          <text x="330" y="385" font-size="10" font-weight="600" fill="#475569">GET /.well-known/jwks.json</text>
+          <text x="345" y="399" font-size="9" fill="#64748b">(Public JWKS Discovery)</text>
+
+          <!-- ============================================================== -->
+          <!-- DATA PLANE FLOW (DIRECT CLIENT -> PORTKEY GATEWAY)             -->
+          <!-- ============================================================== -->
+
+          <!-- Step 6: DIRECT DATA PLANE - Client -> Portkey Gateway -->
+          <path d="M 305 118 L 380 118 L 380 295 L 467 295" fill="none" stroke="#7c3aed" stroke-width="2.5" marker-end="url(#arrow-purple)" />
+          <circle cx="380" cy="180" r="11" fill="#7c3aed" />
+          <text x="376.5" y="184" font-size="11" font-weight="700" fill="#ffffff">6</text>
+          <rect x="398" y="162" width="210" height="36" rx="6" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.2" />
+          <text x="406" y="177" font-size="10" font-weight="700" fill="#6b21a8">DIRECT DATA PLANE INFERENCE</text>
+          <text x="406" y="191" font-size="9" fill="#475569">POST /v1/chat/completions (Bearer Mode A)</text>
+
+          <!-- Step 7: Portkey Gateway -> Upstream LLMs (Horizontal to Green) -->
+          <line x1="745" y1="375" x2="797" y2="375" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)" />
+          <circle cx="773" cy="360" r="10" fill="#16a34a" />
+          <text x="769.5" y="364" font-size="11" font-weight="700" fill="#ffffff">7</text>
+          <text x="752" y="398" font-size="10" font-weight="700" fill="#15803d">Guarded Call</text>
+        </svg>
+
+        <div class="flex flex-wrap gap-6 justify-center mt-6 pt-4 border-t border-slate-100 text-xs text-slate-600 font-medium">
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded bg-amber-50 border border-amber-500"></span>
+            Identity &amp; Auth (Client &amp; Entra ID)
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded bg-blue-50 border border-blue-500"></span>
+            Out-of-Band Token Broker (Container App &amp; Key Vault)
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded bg-purple-50 border border-purple-500"></span>
+            Portkey AI Gateway Engine
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded bg-emerald-50 border border-emerald-500"></span>
+            Protected Upstream LLMs
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-0.5 bg-purple-600"></span>
+            Direct Data Plane (Inference)
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-0.5 border-t border-dashed border-slate-500"></span>
+            Out-of-Band JWKS Discovery
+          </div>
+        </div>
+      </div>
+
+      <!-- Step by Step Narrative -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-slate-700">
+        <div class="p-3 bg-white border border-slate-200 rounded-lg">
+          <span class="font-bold text-blue-600">Steps 1 &amp; 2 (Entra Auth):</span> Client authenticates via standard client credentials or OAuth authorization code flow. Entra ID returns a standard corporate JWT containing enterprise group mappings in the <code class="bg-slate-100 px-1 rounded font-mono">roles</code> claim.
+        </div>
+        <div class="p-3 bg-white border border-slate-200 rounded-lg">
+          <span class="font-bold text-blue-600">Steps 3 &amp; 4 (Token Minting):</span> Client calls <code class="bg-slate-100 px-1 rounded font-mono">POST /token/exchange</code> on application boot. The broker maps roles to the Portkey workspace and <code class="bg-slate-100 px-1 rounded font-mono">defaults.config_slug</code>, signs the token via Key Vault (RS256), and returns a Mode A JWT. Client caches this token for 50 minutes.
+        </div>
+        <div class="p-3 bg-white border border-slate-200 rounded-lg">
+          <span class="font-bold text-slate-600">Step 5 (JWKS Public Key Discovery):</span> Portkey fetches the broker's public RSA coordinates via <code class="bg-slate-100 px-1 rounded font-mono">/.well-known/jwks.json</code>, and uses them to verify signatures (cache lifetime not measured; a newly added JWKS URL was accepted on the first request).
+        </div>
+        <div class="p-3 bg-white border border-purple-200 bg-purple-50/30 rounded-lg">
+          <span class="font-bold text-purple-700">Steps 6 &amp; 7 (Direct Data Plane Inference):</span> Client makes inference requests <strong>directly to the Portkey Gateway</strong> passing the cached Mode A JWT. The broker is never in the request path. The gateway validates the JWT, applies <code class="bg-slate-100 px-1 rounded font-mono">defaults.config_slug</code>, and routes to the upstream.
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: Service Principal & Roles Design -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">5</span>
+        <h2 class="text-xl font-bold text-slate-900">Entra ID Service Principal &amp; App Roles Design</h2>
+      </div>
+
+      <div class="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-2">
+        <h3 class="text-sm font-bold text-emerald-900 flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-600"></span> Key Insight: App Roles vs. Microsoft Graph Directory Queries
+        </h3>
+        <p class="text-xs text-emerald-800 leading-relaxed">
+          The token exchange broker does <strong>not</strong> need directory-reading permissions (<code class="bg-emerald-100 px-1 rounded">User.Read.All</code>, <code class="bg-emerald-100 px-1 rounded">Directory.Read.All</code>) against Microsoft Graph. Querying Graph at runtime introduces 150–300ms of network latency and risks API throttling. Furthermore, in large enterprises with over 150–200 groups, Entra ID strips the <code class="bg-emerald-100 px-1 rounded">groups</code> claim entirely due to group overage. <strong>App Roles are never omitted or stripped</strong>, making them the most reliable carrier of governance context.
+        </p>
+      </div>
+
+      <div class="space-y-2 text-xs text-slate-700">
+        <p class="font-semibold text-slate-900">Configuration Steps in Microsoft Entra ID:</p>
+        <ol class="list-decimal pl-5 space-y-1.5">
+          <li><strong>Register App:</strong> Create an App Registration named <code class="bg-slate-100 px-1 rounded font-mono">Portkey-Token-Broker</code> with Application ID URI <code class="bg-slate-100 px-1 rounded font-mono">api://portkey-token-broker</code>.</li>
+          <li><strong>Declare App Roles:</strong> Under <em>App roles</em>, add roles representing Portkey workspaces: <code class="bg-slate-100 px-1 rounded font-mono">Portkey.Workspace.Finance</code>, <code class="bg-slate-100 px-1 rounded font-mono">Portkey.Workspace.HR</code> (the lab build used Finance and HR; <code class="bg-slate-100 px-1 rounded font-mono">entra/setup.sh</code> creates them).</li>
+          <li><strong>Assign Enterprise Groups:</strong> Under <em>Enterprise Applications</em>, assign existing AD security groups (e.g. "SG-FinAnalytics") to their respective App Roles. Entra emits them in the <code class="bg-slate-100 px-1 rounded font-mono">roles</code> array (observed for both app and user tokens; group assignment needs Entra ID P1 per Microsoft).</li>
+          <li><strong>Require assignment:</strong> turn on "assignment required" so Entra refuses callers with no role before the broker sees them (observed: <code class="bg-slate-100 px-1 rounded font-mono">AADSTS501051</code> for apps, <code class="bg-slate-100 px-1 rounded font-mono">AADSTS50105</code> for users).</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- SECTION 6: Implementation Blueprint -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">6</span>
+        <h2 class="text-xl font-bold text-slate-900">Azure-Native Implementation Blueprint</h2>
+      </div>
+      <p class="text-slate-600 text-sm leading-relaxed">
+        The implementation is a plain Node 20 HTTP service in <code>broker/</code> (TypeScript, container image on Azure Container Apps, system-assigned identity with Key Vault Crypto User), not the Azure Functions v4 code of the original sketch. It exposes <code>POST /token/exchange</code>, <code>GET /.well-known/jwks.json</code> and <code>GET /healthz</code>. The sketch is removed from this page because it had the defects listed in the status box above; the source of truth is the repo.
+      </p>
+
+    </section>
+
+    <!-- SECTION 7: Microsoft Architectural Precedents -->
+    <section class="space-y-4">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">7</span>
+        <h2 class="text-xl font-bold text-slate-900">Official Standards &amp; Architectural References</h2>
+      </div>
+      <p class="text-slate-600 text-sm leading-relaxed">
+        This solution adheres directly to authoritative industry standards and patterns from the Microsoft Azure Architecture Center:
+      </p>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <a href="https://portkey.ai/docs/product/enterprise-offering/org-management/jwt" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-emerald-200 bg-emerald-50/20 rounded-lg hover:border-emerald-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-emerald-700 mb-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Portkey Docs: Mode A JWT Authentication &rarr;
+          </div>
+          <p class="text-slate-600">Official Portkey documentation defining Mode A and Mode B specifications, required claims (portkey_oid, portkey_workspace, defaults.config_id), and JWKS verification.</p>
+        </a>
+
+        <a href="https://datatracker.ietf.org/doc/html/rfc8693" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-blue-200 bg-blue-50/20 rounded-lg hover:border-blue-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-blue-600 mb-1 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-blue-500"></span> IETF RFC 8693: OAuth 2.0 Token Exchange &rarr;
+          </div>
+          <p class="text-slate-600">Standard protocol specification for security token services (STS) to accept one security token and return a different target security token for domain-specific policy delegation.</p>
+        </a>
+
+        <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/federated-identity" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-blue-600 mb-1">Azure Architecture: Federated Identity Pattern &rarr;</div>
+          <p class="text-slate-600">Separates central corporate auth from application-specific Security Token Services (STS) to transform identity into domain-specific claims.</p>
+        </a>
+
+        <a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/gateway-offloading" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-blue-600 mb-1">Azure Architecture: Gateway Offloading Pattern &rarr;</div>
+          <p class="text-slate-600">Offloads identity normalization and token mediation away from downstream microservices to maintain standard protocols.</p>
+        </a>
+
+        <a href="https://learn.microsoft.com/en-us/azure/key-vault/keys/about-keys-secrets-certificates#key-operations" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-blue-600 mb-1">Azure Key Vault Cryptographic Operations &rarr;</div>
+          <p class="text-slate-600">Documents signing token digests in FIPS 140-2 validated HSMs without exposing private key material to the runtime environment.</p>
+        </a>
+
+        <a href="https://learn.microsoft.com/en-us/entra/identity-platform/custom-claims-provider-reference" target="_blank" rel="noopener noreferrer" class="p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:shadow-sm transition-all block">
+          <div class="font-bold text-blue-600 mb-1">Microsoft Entra ID: Custom Claims Provider Reference &rarr;</div>
+          <p class="text-slate-600">Documents the strict schema limitation that custom claims must evaluate to scalar types or flat arrays, proving why native Entra claims cannot emit nested objects.</p>
+        </a>
+      </div>
+    </section>
+
+    <!-- SECTION 8: Open Decisions & Next Steps -->
+    <section class="space-y-4 border-t border-slate-200 pt-8 pb-12">
+      <div class="flex items-center gap-2">
+        <span class="flex items-center justify-center w-7 h-7 rounded-md bg-slate-900 text-white font-bold text-xs">8</span>
+        <h2 class="text-xl font-bold text-slate-900">Open Decisions &amp; Implementation Next Steps</h2>
+      </div>
+
+      <div class="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-xs text-slate-700">
+        <div class="flex items-start gap-2.5">
+          <span class="font-bold text-slate-900 min-w-[20px]">1.</span>
+          <div>
+            <strong class="text-slate-900">Key Signing Strategy Decision:</strong>
+            <p class="mt-0.5 text-slate-600">The build signs with Key Vault on every exchange (a digest is hashed locally and signed in the vault, so the private key never leaves it). Exchange latency was not measured; the client caches the token, so inference calls don't pay it. Cached-key signing in memory remains an option if exchange latency matters.</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-2.5">
+          <span class="font-bold text-slate-900 min-w-[20px]">2.</span>
+          <div>
+            <strong class="text-slate-900">JWKS Network Reachability:</strong>
+            <p class="mt-0.5 text-slate-600">If using Portkey Cloud (SaaS), the broker's <code class="bg-slate-200 px-1 rounded">/.well-known/jwks.json</code> route must be publicly accessible over HTTPS. The tests ran with a public endpoint and a hybrid gateway; Mode A on SaaS (control-plane validation) and a private-endpoint variant for a self-hosted gateway in AKS were not tested.</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-2.5">
+          <span class="font-bold text-slate-900 min-w-[20px]">3.</span>
+          <div>
+            <strong class="text-slate-900">Client SDK Lifecycle:</strong>
+            <p class="mt-0.5 text-slate-600">Configure client SDK wrappers (Python/TypeScript) to request a Mode A token on application boot and refresh on a 50-minute interval, storing the token in-memory across inference requests to avoid cold-start overhead.</p>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-2.5">
+          <span class="font-bold text-slate-900 min-w-[20px]">4.</span>
+          <div>
+            <strong class="text-slate-900">User attribution vs availability:</strong>
+            <p class="mt-0.5 text-slate-600">User tokens (with <code class="bg-slate-200 px-1 rounded">email_id</code>) need workspace membership by default (403, code 033 otherwise). <code class="bg-slate-200 px-1 rounded">JWT_JIT_USER_ACCESS=ON</code> removes that requirement by admitting the caller as a workspace service key. Decide whether per-user attribution matters, and check the logs: it was not verified under JIT.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Sticky Footer Summary -->
+  <footer class="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 space-x-3">
+    <span>Handoff Specification</span>
+    <span>•</span>
+    <a href="https://portkey.ai/docs/product/enterprise-offering/org-management/jwt" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Portkey Mode A Spec</a>
+    <span>•</span>
+    <a href="https://datatracker.ietf.org/doc/html/rfc8693" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">RFC 8693 Token Exchange</a>
+    <span>•</span>
+    <span>Entra ID &rarr; Portkey Facade</span>
+  </footer>
+
+</body>
+</html>
