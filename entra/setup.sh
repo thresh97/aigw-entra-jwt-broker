@@ -10,7 +10,7 @@
 #   1 public client   for user sign-in (ROPC / device code), consented to access_as_user
 #   2 groups          finance, hr
 #   4 users           alice (finance), bob (hr), carol (finance and hr), dave (no group, no role)
-# Group-to-role assignment needs Entra ID P1. On Free the script falls back to assigning the roles to the users directly.
+# Microsoft's doc says group-to-role assignment needs Entra ID P1; it worked on a Free tenant (2026-10-23). If the tenant refuses, the script falls back to assigning the roles to the users directly.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -108,7 +108,7 @@ az ad group member add --group "$G_FIN" --member-id "$U_CAROL"
 az ad group member add --group "$G_HR" --member-id "$U_BOB"
 az ad group member add --group "$G_HR" --member-id "$U_CAROL"
 
-# ---- Role assignment: groups on P1, users directly otherwise
+# ---- Role assignment: groups if the tenant accepts it, users directly otherwise
 assign() { # assign groups|users <object id> <role value>
   post "$1/$2/appRoleAssignments" \
     "{\"principalId\":\"$2\",\"resourceId\":\"$BROKER_SP_ID\",\"appRoleId\":\"$(role_id "$3")\"}"; }

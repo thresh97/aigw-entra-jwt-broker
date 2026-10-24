@@ -95,7 +95,7 @@ Configuration steps in Entra ID:
 
 1. **Register the app.** Create an app registration named `Portkey-Token-Broker` with Application ID URI `api://portkey-token-broker`.
 2. **Declare app roles.** Under *App roles*, add roles that stand for Portkey workspaces: `Portkey.Workspace.Finance` and `Portkey.Workspace.HR` (the lab build used Finance and HR; `entra/setup.sh` creates them).
-3. **Assign enterprise groups.** Under *Enterprise applications*, assign existing security groups (for example "SG-FinAnalytics") to their app roles. Entra emits them in the `roles` array (observed for both app and user tokens; group assignment needs Entra ID P1 per Microsoft).
+3. **Assign enterprise groups.** Under *Enterprise applications*, assign existing security groups (for example "SG-FinAnalytics") to their app roles. Entra emits them in the `roles` array (observed for both app and user tokens; Microsoft's doc says group assignment needs Entra ID P1, but it worked on the Free-tier lab tenant).
 4. **Require assignment.** Turn on "assignment required" so Entra refuses callers with no role before the broker sees them (observed: `AADSTS501051` for apps, `AADSTS50105` for users).
 
 ## 6. Azure-native implementation

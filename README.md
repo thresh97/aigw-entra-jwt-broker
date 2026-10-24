@@ -24,7 +24,7 @@ The broker is stateless apart from the key. The policy (role to workspace, `conf
 ## What you need
 
 - A hybrid AI Gateway (2.29.0 tested) with `JWT_ENABLED=ON`, and the right to edit the org's JWT settings (Admin Settings, Organisation, Authentication) and to use two workspaces.
-- An Entra tenant where you can register apps and assign app roles (Global Administrator, or Application Administrator plus User and Groups Administrator), and `az login` into it. Assigning roles to groups needs Entra ID P1; the setup script falls back to assigning roles to users directly.
+- An Entra tenant where you can register apps and assign app roles (Global Administrator, or Application Administrator plus User and Groups Administrator), and `az login` into it. Microsoft's doc says assigning roles to groups needs Entra ID P1, but it worked on a Free tenant (see Findings); the setup script still falls back to assigning roles to users directly if the tenant refuses.
 - An Azure subscription for the Container App and Key Vault. It may belong to a different tenant than Entra.
 - The tools: `az`, `terraform` 1.6+, `jq`, `node` 20, `curl`, `airs-cli` (for `gateway/`), and an x86 Docker host reachable over ssh if you build the image yourself (`broker/publish.sh`).
 - An upstream the gateway can reach. The tests use an Anthropic-compatible mock as `custom_host`, so no provider key is needed and a 200 proves the request reached that upstream.
@@ -80,7 +80,7 @@ Tested 2026-10-23 against hybrid gateway 2.29.0 (EKS) with the broker running as
 ### Entra side
 
 - App roles reach the token as the `roles` claim for both caller kinds: client-credentials (app) tokens and delegated user tokens. The broker puts the user's email into `email_id` for user tokens and uses the Entra object id as `sub`; app tokens carry no email.
-- Roles assigned to a group reached the user's token. The lab tenant accepted the group assignment; its license tier wasn't recorded and the Microsoft doc says P1 is needed, so a Free tenant is untested.
+- Roles assigned to a group reached the user's token. The lab tenant is on the Free tier (noted by the operator after the run; the script doesn't record the tier) and accepted the group assignment, although Microsoft's doc says P1 is needed. Other tenants and later Entra changes may differ.
 - With "assignment required" on the broker's enterprise application, Entra itself refuses a caller that holds no role before the broker sees it (apps: `AADSTS501051`, users: `AADSTS50105`). The broker's own 403 `no_matching_role` path is therefore covered by unit tests only.
 - A caller holding both roles gets the policy of the first role in the policy's key order.
 - Password (ROPC) sign-in works for test users without MFA. It is a test convenience only.
@@ -115,7 +115,6 @@ Tested 2026-10-23 against hybrid gateway 2.29.0 (EKS) with the broker running as
 - Mode B with Entra's own JWKS configured on the org.
 - `usage_limits` (array shape in the doc) and its enforcement.
 - Per-user attribution in Portkey logs under `JWT_JIT_USER_ACCESS=ON`.
-- Group role assignment on an Entra Free tenant.
 
 ## License
 
