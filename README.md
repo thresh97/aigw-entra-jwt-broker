@@ -6,7 +6,7 @@ A small token broker that turns a Microsoft Entra ID token (carrying an app role
 
 | Part | What it is | Where |
 |---|---|---|
-| Entra objects | Broker API app with app roles `Portkey.Workspace.Finance` and `Portkey.Workspace.HR`, three client-credentials apps, a public client, groups and test users | `entra/` (az CLI and Microsoft Graph, no azuread Terraform provider) |
+| Entra objects | Broker API app with app roles `Portkey.Workspace.Finance` and `Portkey.Workspace.HR`, three client-credentials apps, a public client for user sign-in (device code, and browser sign-in with PKCE on the loopback redirect `http://127.0.0.1`), groups and test users | `entra/` (az CLI and Microsoft Graph, no azuread Terraform provider) |
 | Broker | Node 20 service: `POST /token/exchange`, `GET /.well-known/jwks.json`, `GET /healthz`. Validates the Entra token, picks a policy by role, signs with Key Vault | `broker/`, public container image |
 | Azure | Container App (HTTPS, system-assigned identity), Key Vault with an RSA-2048 signing key (Crypto User for the identity) | `infra/` (Terraform, azurerm only) |
 | Gateway objects | Per role: a workspace, a config (a fallback config that identifies itself in a response header) and the policy that names them | `gateway/` (airs-cli) |
@@ -73,9 +73,25 @@ For a person or a basic agent, no code changes. The scenarios send requests to t
 4. Run `broker`, `modea-ok`, `modea-user`, `negative` and `mode-b` (about 5 minutes together). `repro/run.sh all` also runs `rotation`, which adds a Key Vault key version and needs `--yes`.
 5. Read `repro/results/<date>-<scenario>/summary.txt`. `PASS`: matches Findings. `CHANGED`: behavior differs from Findings, most likely a gateway change, so compare the observed line with the Gateway table below. `ERROR`: the run broke; fix the environment, not the scripts.
 
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| A native app's browser sign-in (authorization code with PKCE, redirect to `http://127.0.0.1:<port>/`) ends on an Entra page with `AADSTS500113: No reply address is registered for the application.` | The public client has no redirect URI. `entra/setup.sh` from before 2026-10-24 registered none, so only device code and ROPC worked | Add `http://127.0.0.1` on the "Mobile and desktop applications" platform (Entra ignores the port on loopback). In the portal: App registrations, `<prefix>-public`, Authentication, Add a platform. Or with az, see below. The device code flow is unaffected and works either way |
+| Sign-in refused with `AADSTS501051` (app) or `AADSTS50105` (user) | The caller holds no app role on the broker, and its enterprise application requires assignment | Assign a role (directly or through a group), see Findings |
+
+Adding the redirect URI with az to an existing lab (this replaces the public client's redirect URI list, so include any URIs it already has):
+
+```
+obj=$(az ad app list --display-name "<prefix>-public" --query "[0].id" -o tsv)
+az rest --method GET --url "https://graph.microsoft.com/v1.0/applications/$obj?\$select=publicClient"   # current list
+az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$obj" \
+  --headers "Content-Type=application/json" --body '{"publicClient":{"redirectUris":["http://127.0.0.1"]}}'
+```
+
 ## Findings
 
-Tested 2026-10-23 against hybrid gateway 2.29.0 (EKS) with the broker running as an Azure Container App and a Key Vault RSA-2048 key. Not tested on SaaS. Behavior may change in later releases. The Portkey JWT doc (portkey.ai/docs, org-management, jwt) was read the same day.
+Tested 2026-10-23 (and the public client's redirect URI on 2026-10-24, see Entra side) against hybrid gateway 2.29.0 (EKS) with the broker running as an Azure Container App and a Key Vault RSA-2048 key. Not tested on SaaS. Behavior may change in later releases. The Portkey JWT doc (portkey.ai/docs, org-management, jwt) was read the same day.
 
 ### Entra side
 
@@ -84,6 +100,7 @@ Tested 2026-10-23 against hybrid gateway 2.29.0 (EKS) with the broker running as
 - With "assignment required" on the broker's enterprise application, Entra itself refuses a caller that holds no role before the broker sees it (apps: `AADSTS501051`, users: `AADSTS50105`). The broker's own 403 `no_matching_role` path is therefore covered by unit tests only.
 - A caller holding both roles gets the policy of the first role in the policy's key order.
 - Password (ROPC) sign-in works for test users without MFA. It is a test convenience only.
+- 2026-10-24: a native client's browser sign-in (PKCE, loopback redirect) against the public client failed with `AADSTS500113` because no redirect URI was registered; device code sign-in on the same client worked. `http://127.0.0.1` (Mobile and desktop applications) was then added by Graph PATCH and reads back from Graph; a browser sign-in with it hasn't been run yet. An unauthenticated authorize request can't show the fix: Entra returns its sign-in page for any redirect URI, registered or not, and checks the redirect only after sign-in. `entra/setup.sh` now registers the URI; a fresh `setup.sh` run with that change hasn't been done. Nothing else was re-tested on 2026-10-24.
 
 ### Minted token
 

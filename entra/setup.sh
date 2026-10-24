@@ -74,11 +74,15 @@ make_client hr CLIENT_HR Portkey.Workspace.HR
 make_client norole CLIENT_NOROLE
 
 # ---- Public client for user sign-in, consented to access_as_user for everyone
+# isFallbackPublicClient allows the device code (and ROPC) flows. The loopback redirect URI, on the "Mobile and
+# desktop applications" platform, allows a native app's browser sign-in (authorization code with PKCE); Entra accepts
+# any port on it. Without it, that sign-in fails with AADSTS500113.
 PUB_ID="$(az ad app create --display-name "$PREFIX-public" --sign-in-audience AzureADMyOrg --query appId -o tsv)"
 PUB_OBJ="$(az ad app show --id "$PUB_ID" --query id -o tsv)"
 echo "PUBLIC_CLIENT_ID=$PUB_ID" >> "$STATE"
 patch "applications/$PUB_OBJ" "$(jq -n --arg b "$BROKER_APP_ID" --arg sid "$SCOPE_ID" '{
   isFallbackPublicClient: true,
+  publicClient: { redirectUris: ["http://127.0.0.1"] },
   requiredResourceAccess: [{ resourceAppId: $b, resourceAccess: [{ id: $sid, type: "Scope" }] }] }')"
 PUB_SP="$(az ad sp create --id "$PUB_ID" --query id -o tsv)"
 post oauth2PermissionGrants "$(jq -n --arg c "$PUB_SP" --arg r "$BROKER_SP_ID" \

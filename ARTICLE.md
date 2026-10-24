@@ -5,7 +5,7 @@ area: aigw
 type: guide            # guide | behavior | capability | limitation | workaround | position
 status: verified          # verified | reported | stale | superseded | retracted
 visibility: public        # internal | public
-verified: 2026-10-23      # YYYY-MM-DD: date of the newest private evidence folder; empty if never tested
+verified: 2026-10-24      # YYYY-MM-DD: date of the newest private evidence folder; empty if never tested
 versions:                 # component: version, as confirmed by that evidence
   aigw-image: 2.29.0
   broker-image-tag: 466198e50e4b
