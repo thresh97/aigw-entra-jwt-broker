@@ -4,7 +4,7 @@ title: Mint Portkey Mode A JWTs from Entra ID with a Key Vault token broker on A
 area: aigw
 type: guide            # guide | behavior | capability | limitation | workaround | position
 status: verified          # verified | reported | stale | superseded | retracted
-visibility: internal      # internal | public
+visibility: public        # internal | public
 verified: 2026-10-23      # YYYY-MM-DD: date of the newest private evidence folder; empty if never tested
 versions:                 # component: version, as confirmed by that evidence
   aigw-image: 2.29.0
@@ -12,7 +12,7 @@ versions:                 # component: version, as confirmed by that evidence
   node: 20
   azurerm: 4.81.0
 source:                   # required when status is reported: where the claim came from
-related: [aigw-workspace-defaults]               # other article IDs
+related: []               # other article IDs
 supersedes: []
 superseded_by:
 tags: [jwt, mode-a, entra, key-vault, container-apps]
