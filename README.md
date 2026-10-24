@@ -113,7 +113,7 @@ Tested 2026-10-23 against hybrid gateway 2.29.0 (EKS) with the broker running as
 - Key rotation (a second key version in the JWKS) and JWKS cache lag.
 - SaaS gateway.
 - Mode B with Entra's own JWKS configured on the org.
-- `usage_limits` (array shape in the doc) and its enforcement.
+- `usage_limits` (array shape in the doc) and its enforcement. The Portkey doc says each unique JWT is tracked separately for token-level limits, so a budget in the claim may restart whenever a client gets a fresh token from the broker; not checked. Use workspace policies for budgets that must survive a token refresh.
 - Per-user attribution in Portkey logs under `JWT_JIT_USER_ACCESS=ON`.
 
 ## License
