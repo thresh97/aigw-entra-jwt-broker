@@ -1,0 +1,23 @@
+{
+  "name": "aigw-entra-jwt-broker",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/src/server.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node --test dist/test/",
+    "start": "node dist/src/server.js"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.4.0",
+    "@azure/keyvault-keys": "^4.9.0",
+    "jose": "^5.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

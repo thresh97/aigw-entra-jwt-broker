@@ -1,0 +1,19 @@
+.DS_Store
+*.swp
+# Local-only files (secrets tend to hide here)
+*.local
+*.local.*
+.env
+# Repro: your environment and run output (copy results into the private evidence tree)
+repro/env
+repro/results/
+# Build output and Terraform state (state holds IDs and can hold secrets)
+node_modules/
+dist/
+infra/.terraform/
+infra/*.tfstate*
+infra/*.tfvars
+!infra/terraform.tfvars.example
+entra/.state.env
+gateway/.state.env
+infra/policy.auto.tfvars

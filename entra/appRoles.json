@@ -1,0 +1,18 @@
+[
+  {
+    "allowedMemberTypes": ["User", "Application"],
+    "description": "Portkey access for the Finance workspace",
+    "displayName": "Portkey Workspace Finance",
+    "id": "5b0a3d1e-6c0e-4f55-9a1d-1f0b7c2a0001",
+    "isEnabled": true,
+    "value": "Portkey.Workspace.Finance"
+  },
+  {
+    "allowedMemberTypes": ["User", "Application"],
+    "description": "Portkey access for the HR workspace",
+    "displayName": "Portkey Workspace HR",
+    "id": "5b0a3d1e-6c0e-4f55-9a1d-1f0b7c2a0002",
+    "isEnabled": true,
+    "value": "Portkey.Workspace.HR"
+  }
+]

@@ -1,0 +1,27 @@
+subscription_id = "00000000-0000-0000-0000-000000000000"
+location        = "eastus2"
+
+# From entra/setup.sh output
+entra_tenant_id  = "00000000-0000-0000-0000-000000000000"
+entra_client_id  = "00000000-0000-0000-0000-000000000000"
+entra_app_id_uri = "api://00000000-0000-0000-0000-000000000000"
+
+# Portkey organisation ID of the target gateway
+portkey_oid = "00000000-0000-0000-0000-000000000000"
+
+policy = {
+  "Portkey.Workspace.Finance" = {
+    workspace = "finance-prod"
+    config_slug = "example-finance-config"
+    scopes    = ["completions.write", "logs.read"]   # gateway scope names, see the README
+    metadata  = { team = "finance" }
+    usage_limits = [
+      { id = "ul-1", type = "cost", credit_limit = 10, status = "active" }
+    ]
+  }
+  "Portkey.Workspace.HR" = {
+    workspace = "hr"
+    config_slug = "example-hr-config"
+    scopes    = ["completions.write"]
+  }
+}
