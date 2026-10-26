@@ -16,6 +16,9 @@ related: []               # other article IDs
 supersedes: []
 superseded_by:
 tags: [jwt, mode-a, entra, key-vault, container-apps]
-internal_refs: []         # public only, recorded exceptions with `why`: README → Private references
+internal_refs:
+  - id: aigw-config-selection
+    why: the new private article under development
+    date: 2026-10-26
 ---
 Metadata for this article, read by `kb`, Obsidian Dataview and agents. The content is in [README.md](README.md).

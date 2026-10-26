@@ -119,7 +119,7 @@ Tested 2026-10-23 (and the public client's redirect URI on 2026-10-24, see Entra
 | No token | 401 `Invalid API Key. Error Code: 03` |
 | Raw Entra token, Entra's JWKS not in the org setting | 401 `No matching key found for kid. Error Code: 03` |
 
-- The hybrid gateway reads `defaults.config_slug` and ignores `defaults.config_id`. Put the slug in the policy. The SaaS gateway is reported (2026-10-24, not tested here) to read `defaults.config_id` instead. The broker sends both: `config_id` is the policy's optional `config_id`, or the slug when that's not set. Whether SaaS accepts the slug there is untested; if it doesn't, set `config_id` in the policy.
+- The hybrid gateway reads `defaults.config_slug` and ignores `defaults.config_id`. Put the slug in the policy. On SaaS, `defaults.config_id` is read as a slug or a UUID, and `config_slug` has not been tested (separate lab tests, 2026-10-01; not run by this article). The broker sends both: `config_id` is the policy's optional `config_id`, or the slug when that's not set, so the same policy works on both. A wrong claim fails open on hybrid (HTTP 200, no config), while a `config_slug` naming a config that doesn't exist gets HTTP 400.
 - The org's JWKS URL setting accepts a comma-separated list, as the doc says. Adding the broker's URL after an existing one worked with no sync lag: the first request after saving was accepted.
 - A user token (one with `email_id`) for a workspace the user isn't a member of gets 403 `Error Code: 033` by default. App tokens skip that check. Setting `JWT_JIT_USER_ACCESS=ON` on the gateway admits the user token as a workspace service key, and all user cases then returned 200. That trades per-user attribution for availability; whether the logs still show the user wasn't checked. Per the doc, the request is then served under the workspace's service-level limits and policies, and any `x-portkey-workspace` header hint is discarded. Whether a `usage_limits` claim in the token still applies to such a request wasn't tested. The setting is documented under [Workspace resolution](https://portkey.ai/docs/product/enterprise-offering/org-management/jwt#workspace-resolution).
 - `scope` carries gateway scope names; use the ones in the Portkey doc (the logs scopes are `logs.read`, `logs.write`, `logs.export`). The test policy's `logs.view` isn't one of them and the gateway accepted the token anyway; what an unknown scope grants wasn't tested.
@@ -132,6 +132,10 @@ Tested 2026-10-23 (and the public client's redirect URI on 2026-10-24, see Entra
 - Mode B with Entra's own JWKS configured on the org (hybrid only: the SaaS gateway is reported to take Mode A only).
 - `usage_limits` (array shape in the doc) and its enforcement. The Portkey doc says each unique JWT is tracked separately for token-level limits, so a budget in the claim may restart whenever a client gets a fresh token from the broker; not checked. Use workspace policies for budgets that must survive a token refresh.
 - Per-user attribution in Portkey logs under `JWT_JIT_USER_ACCESS=ON`.
+
+## Private (not published)
+
+- `aigw-config-selection`: which config the gateway applies (JWT claims, API key and workspace defaults) on SaaS and hybrid, tracked by release. Article under development.
 
 ## License
 

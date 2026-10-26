@@ -8,7 +8,7 @@ This page is the original architecture handoff, corrected after the build and te
 
 The design below was implemented as a Container App with a Key Vault signing key and Terraform (see the article README), and tested against a hybrid gateway 2.29.0. The original handoff was a design with untested code. Corrections made here:
 
-- The hybrid gateway reads `defaults.config_slug` and ignores `defaults.config_id`. Put the slug in the policy. The SaaS gateway is reported (2026-10-24, not tested here) to read `defaults.config_id` instead. The broker sends both, with `config_id` falling back to the slug when the policy doesn't set one.
+- The hybrid gateway reads `defaults.config_slug` and ignores `defaults.config_id`. Put the slug in the policy. On SaaS, `defaults.config_id` is read as a slug or a UUID, and `config_slug` has not been tested (separate lab tests, 2026-10-01; not run by this article). The broker sends both, with `config_id` falling back to the slug when the policy doesn't set one.
 - "Tamper-proof config" is not established. The Portkey doc says a config sent in a request header can override the token's default unless config override is disabled; that was not tested.
 - "Mode B forces one gateway per workspace" is only partly right per the doc (workspace can come from an allowlist, an org default or a `sub` mapping). Mode B with Entra's own JWKS was not tested. Mode B is reported (2026-10-24) to be hybrid-only; the SaaS gateway takes Mode A only.
 - Scope names must be gateway scopes (`logs.read`, not `logs.view`). `usage_limits` is an array in the doc; the object shape in the original sketch is wrong, and enforcement was not tested.
